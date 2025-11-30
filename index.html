@@ -3,121 +3,173 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>MTG Deck Builder — Simple List</title>
+<title>MTG Deck Builder — List Mode</title>
 <style>
-  body{font-family:Arial,sans-serif;margin:14px;background:#f6f7f8;color:#111}
-  header{margin-bottom:10px}
+  :root{--accent:#287271;--muted:#666}
+  body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:14px;background:#f6f7f8;color:#111}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:10px}
   h1{font-size:20px;margin:0}
-  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
-  input[type="search"]{padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:280px}
-  button{background:#287271;color:#fff;border:0;padding:6px 10px;border-radius:6px;cursor:pointer}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  input[type="search"]{padding:8px 10px;border:1px solid #ccc;border-radius:8px;width:320px}
+  button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
   button.alt{background:#444}
-  #results{max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-top:6px}
-  .result{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;border:1px solid #eee;background:#fff}
+  .layout{display:flex;gap:16px;align-items:flex-start}
+  .col{background:#fff;border:1px solid #e2e4e6;padding:12px;border-radius:10px}
+  .left{flex:1;min-width:360px}
+  .right{width:380px}
+  #results{max-height:64vh;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-top:6px}
+  .result{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;border:1px solid #eee;background:#fff}
+  .thumb{width:48px;height:70px;background:#f2f3f4;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999}
   .meta{flex:1}
-  .meta small{display:block;color:#666;margin-top:2px;font-size:12px}
-  #deckList{background:#fff;border:1px solid #e2e4e6;padding:8px;border-radius:8px;max-height:40vh;overflow:auto}
-  .deck-row{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px dashed #eee}
-  .deck-row:last-child{border-bottom:none}
-  .count{font-weight:700;margin-right:6px}
+  .meta small{display:block;color:var(--muted);margin-top:4px}
+  .deck-list{max-height:64vh;overflow:auto;margin-top:6px}
+  .deck-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px;border-bottom:1px dashed #eee}
+  .count{background:#eee;padding:4px 8px;border-radius:6px;font-weight:700}
 </style>
 </head>
 <body>
-
 <header>
-  <h1>MTG Deck Builder — Simple List</h1>
+  <h1>MTG Deck Builder — List Mode</h1>
 </header>
 
 <div class="controls">
-  <input id="q" type="search" placeholder="Search card name..." />
+  <input id="q" type="search" placeholder="Search card name (press Enter or Search)" />
   <button id="searchBtn">Search</button>
+  <label style="display:flex;align-items:center;gap:8px;margin-left:8px">
+    <input id="fourLimit" type="checkbox" checked /> Enforce 4-of
+  </label>
 </div>
 
-<div id="results"><div class="muted">Search to see results</div></div>
+<div class="layout">
+  <main class="col left">
+    <div><strong>Search results</strong></div>
+    <div id="results" aria-live="polite" style="margin-top:12px">
+      <div class="muted">Search to see results.</div>
+    </div>
+  </main>
 
-<h2>Your Deck</h2>
-<div id="deckList"><div class="muted">No cards yet</div></div>
+  <aside class="col right">
+    <div>
+      <strong>Your Deck</strong>
+      <div class="muted">Saved in your browser</div>
+      <div id="deckCount" style="margin-top:8px;font-weight:700">0 cards</div>
+    </div>
+    <div id="deckArea" class="deck-list" aria-live="polite"></div>
+  </aside>
+</div>
 
 <script>
-const SRY_BASE = 'https://api.scryfall.com/cards/search?q=';
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-let deck = {}; // key = card id, value = {name, type_line, count, image_uri}
+// Config
+const LOCAL_KEY = 'mtg_deck_list';
+let deckMap = {}, deckOrder = [];
 
-// Utils
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function normalizeCard(card){
-  const id = card.id || ('local:' + card.name || 'unknown');
-  const name = card.name || 'Unknown';
-  const type_line = card.type_line || '';
-  let image_uri = '';
-  if (card.image_uris && card.image_uris.normal) image_uri = card.image_uris.normal;
-  else if (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris && card.card_faces[0].image_uris.normal)
-    image_uri = card.card_faces[0].image_uris.normal;
-  return {id,name,type_line,image_uri};
+// Load/save deck
+function loadDeck() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.deck)) {
+      deckMap = {}; deckOrder = [];
+      parsed.deck.forEach(it => {
+        const id = it.id || ('local:' + it.name);
+        deckMap[id] = { card: { id:id, name:it.name }, count: it.count||1 };
+        deckOrder.push(id);
+      });
+    }
+  } catch(e){ console.warn(e); }
 }
 
-// Deck rendering
-function renderDeck(){
-  const deckDiv = document.getElementById('deckList');
-  deckDiv.innerHTML = '';
-  const keys = Object.keys(deck);
-  if (!keys.length){ deckDiv.innerHTML = '<div class="muted">No cards yet</div>'; return; }
-  keys.forEach(id=>{
-    const c = deck[id];
-    const row = document.createElement('div'); row.className='deck-row';
-    const left = document.createElement('div'); left.innerHTML = `<span class="count">${c.count}</span> ${escapeHtml(c.name)} <small>${escapeHtml(c.type_line)}</small>`;
-    const right = document.createElement('div');
-    const plus = document.createElement('button'); plus.textContent='+'; plus.onclick=()=>{c.count++; renderDeck();};
-    const minus = document.createElement('button'); minus.textContent='−'; minus.onclick=()=>{
-      c.count--; if(c.count<=0) delete deck[id]; renderDeck();
-    };
-    right.appendChild(plus); right.appendChild(minus);
-    row.appendChild(left); row.appendChild(right);
-    deckDiv.appendChild(row);
+function saveDeck() {
+  const arr = deckOrder.map(id => {
+    const e = deckMap[id];
+    return { id:e.card.id, name:e.card.name, count:e.count };
   });
+  localStorage.setItem(LOCAL_KEY, JSON.stringify({deck:arr}));
+  renderDeck();
 }
 
-// Fetch helper
-async function fetchJsonWithFallback(url){
-  try{
-    const r = await fetch(url); if(!r.ok) throw new Error('Direct fetch failed');
-    return await r.json();
-  }catch(err){
-    const prox = CORS_PROXY + encodeURIComponent(url);
-    const r2 = await fetch(prox);
-    if(!r2.ok) throw new Error('Proxy fetch failed');
-    return await r2.json();
-  }
+// Render deck list
+function renderDeck() {
+  const area = document.getElementById('deckArea'); area.innerHTML = '';
+  let total = 0;
+  deckOrder.forEach(id=>{
+    const e = deckMap[id]; if(!e) return;
+    total += e.count;
+    const row = document.createElement('div'); row.className = 'deck-row';
+    row.innerHTML = `<div><strong>${escapeHtml(e.card.name)}</strong></div>`;
+    const right = document.createElement('div'); right.style.display='flex'; right.style.gap='6px';
+    const count = document.createElement('div'); count.className='count'; count.textContent=e.count;
+    const plus = document.createElement('button'); plus.textContent='+'; plus.onclick = ()=> addToDeck(e.card);
+    const minus = document.createElement('button'); minus.textContent='−'; minus.onclick = ()=> removeOne(id);
+    const rem = document.createElement('button'); rem.textContent='Remove'; rem.onclick = ()=> removeAll(id);
+    right.appendChild(count); right.appendChild(plus); right.appendChild(minus); right.appendChild(rem);
+    row.appendChild(right); area.appendChild(row);
+  });
+  document.getElementById('deckCount').textContent = total + ' cards';
 }
 
-// Search
-async function doSearch(q){
-  const query = q && q.trim().length ? q.trim() : 'a';
-  const url = SRY_BASE + encodeURIComponent(query);
+function addToDeck(card) {
+  const enforce4 = document.getElementById('fourLimit').checked;
+  const id = card.id || ('local:' + card.name);
+  if(!deckMap[id]) { deckMap[id] = { card:{id:id,name:card.name}, count:0 }; deckOrder.push(id); }
+  const cur = deckMap[id].count||0;
+  if(enforce4 && cur>=4){ alert('4-of limit reached'); return; }
+  deckMap[id].count = cur+1; saveDeck();
+}
+
+function removeOne(id) {
+  if(!deckMap[id]) return;
+  deckMap[id].count -=1;
+  if(deckMap[id].count<=0){ delete deckMap[id]; deckOrder=deckOrder.filter(x=>x!==id); }
+  saveDeck();
+}
+
+function removeAll(id){
+  if(!deckMap[id]) return;
+  delete deckMap[id]; deckOrder=deckOrder.filter(x=>x!==id); saveDeck();
+}
+
+// Escape HTML
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Fetch Scryfall
+async function scrySearch(q,page=1){
+  const url='https://api.scryfall.com/cards/search?q=' + encodeURIComponent(q) + '&page=' + page;
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('Fetch failed: ' + r.status);
+  return await r.json();
+}
+
+async function doSearch(q,page=1){
   const resultsDiv = document.getElementById('results');
-  resultsDiv.innerHTML = '<div class="muted">Searching...</div>';
-  try{
-    const data = await fetchJsonWithFallback(url);
-    const entries = data.data || [];
-    if(!entries.length){ resultsDiv.innerHTML='<div class="muted">No results</div>'; return; }
+  resultsDiv.innerHTML='<div class="muted">Searching…</div>';
+  try {
+    const query = q && q.trim().length ? q.trim() : 'a';
+    const data = await scrySearch(query,page);
+    if(data.object==='error'){ resultsDiv.innerHTML='<div class="muted">Error: '+escapeHtml(data.details||'Unknown')+'</div>'; return; }
+    const entries = data.data||[];
     resultsDiv.innerHTML='';
-    entries.slice(0,50).forEach(raw=>{
-      const c = normalizeCard(raw);
-      const row = document.createElement('div'); row.className='result';
-      const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML=`<strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.type_line)}</small>`;
-      const btn = document.createElement('button'); btn.textContent='Add'; btn.onclick=()=>{ 
-        if(!deck[c.id]) deck[c.id] = {...c,count:1}; else deck[c.id].count++; renderDeck();
-      };
-      row.appendChild(meta); row.appendChild(btn);
+    if(!entries.length){ resultsDiv.innerHTML='<div class="muted">No results</div>'; return; }
+    entries.slice(0,50).forEach(c=>{
+      const row=document.createElement('div'); row.className='result';
+      const thumb=document.createElement('div'); thumb.className='thumb'; thumb.textContent=(c.set||'').toUpperCase();
+      const meta=document.createElement('div'); meta.className='meta'; meta.innerHTML=`<strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.type_line||'')} • ${escapeHtml(c.rarity||'')}</small>`;
+      const actions=document.createElement('div'); actions.style.display='flex'; actions.style.gap='6px';
+      const addBtn=document.createElement('button'); addBtn.textContent='Add'; addBtn.onclick=()=> addToDeck({id:c.id,name:c.name});
+      actions.appendChild(addBtn);
+      row.appendChild(thumb); row.appendChild(meta); row.appendChild(actions);
       resultsDiv.appendChild(row);
     });
-  }catch(e){ resultsDiv.innerHTML='<div class="muted">Search failed</div>'; console.error(e);}
+  } catch(e){ resultsDiv.innerHTML='<div class="muted">Search failed: '+escapeHtml(e.message)+'</div>'; console.error(e); }
 }
 
-// Events
-document.getElementById('searchBtn').addEventListener('click',()=>{doSearch(document.getElementById('q').value.trim());});
-document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter') doSearch(document.getElementById('q').value.trim());});
+// Search triggers
+document.getElementById('searchBtn').addEventListener('click',()=>doSearch(document.getElementById('q').value.trim(),1));
+document.getElementById('q').addEventListener('keydown', e=>{ if(e.key==='Enter'){ doSearch(document.getElementById('q').value.trim(),1); }});
 
+// Init
+loadDeck(); renderDeck();
 </script>
 </body>
 </html>
