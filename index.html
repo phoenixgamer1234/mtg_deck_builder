@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MTG Deck Builder (GitHub Pages friendly)</title>
+<style>
+  :root{--accent:#287271;--muted:#666}
+  body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:14px;background:#f6f7f8;color:#111}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  h1{font-size:20px;margin:0}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  input[type="search"]{padding:8px 10px;border:1px solid #ccc;border-radius:8px;width:320px}
+  button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button.alt{background:#444}
+  .layout{display:flex;gap:16px;align-items:flex-start}
+  .col{background:#fff;border:1px solid #e2e4e6;padding:12px;border-radius:10px}
+  .left{flex:1;min-width:360px}
+  .right{width:360px}
+  #results{max-height:68vh;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-top:6px}
+  .result{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;border:1px solid #eee;background:#fff}
+  .thumb{width:48px;height:70px;background:#f2f3f4;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999}
+  .meta{flex:1}
+  .meta small{display:block;color:var(--muted);margin-top:4px}
+  .deck-list{max-height:44vh;overflow:auto;margin-top:6px}
+  .deck-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border-radius:6px;border-bottom:1px dashed #eee}
+  .count{background:#eee;padding:6px 8px;border-radius:6px;font-weight:700}
+  .preview{margin-top:12px;text-align:center}
+  img#previewImg{max-width:100%;border-radius:8px;display:block;margin:0 auto}
+  .muted{color:var(--muted);font-size:13px}
+  textarea{width:100%;height:120px;border:1px solid #ddd;border-radius:8px;padding:8px}
+  .row{display:flex;gap:8px;align-items:center}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>MTG Deck Builder — GitHub Pages friendly</h1>
+    <div class="muted">Search Scryfall (direct). If blocked, automatically retries via a CORS proxy.</div>
+  </div>
+</header>
+
+<div class="controls">
+  <input id="q" type="search" placeholder="Search card names or keywords (enter to search)" />
+  <button id="searchBtn">Search</button>
+  <button id="popularBtn" class="alt">Popular</button>
+  <label style="display:flex;align-items:center;gap:8px;margin-left:8px">
+    <input id="fourLimit" type="checkbox" checked /> Enforce 4-of limit
+  </label>
+  <div style="margin-left:auto" class="row">
+    <button id="exportBtn">Export .json</button>
+    <button id="importBtn" class="alt">Import JSON</button>
+  </div>
+</div>
+
+<div class="layout">
+  <main class="col left">
+    <div>
+      <strong>Search results</strong> <span id="searchInfo" class="muted" style="margin-left:8px"></span>
+    </div>
+    <div id="results"><div class="muted">Type and hit Search (or press Enter).</div></div>
+    <div class="muted" style="margin-top:10px">
+      Tip: results show card name/type/rarity. Click <strong>Preview</strong> to load the image on demand. Click <strong>Add</strong> to add to your deck.
+    </div>
+  </main>
+
+  <aside class="col right">
+    <div>
+      <strong>Your Deck</strong>
+      <div class="muted">Saved in your browser (localStorage)</div>
+      <div id="deckCount" style="margin-top:8px;font-weight:700">0 cards</div>
+    </div>
+
+    <div id="deckArea" class="deck-list" aria-live="polite"></div>
+
+    <div class="preview col" style="margin-top:10px">
+      <strong id="previewTitle">Preview</strong>
+      <div id="previewType" class="muted" style="margin-bottom:8px"></div>
+      <img id="previewImg" alt="card preview" style="display:none" />
+      <div id="previewPlaceholder" class="muted">No card selected</div>
+    </div>
+
+    <div style="margin-top:12px" class="col">
+      <strong>Import / Export</strong>
+      <div class="muted">Copy/paste deck JSON or use export/import buttons.</div>
+      <textarea id="jsonArea" placeholder='{"deck":[{"id":"...","name":"...","count":4}]}'></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="applyImport">Apply Import</button>
+        <button id="copyExport" class="alt">Copy JSON</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+/*
+  GitHub Pages friendly MTG deck-builder.
+  Strategy: try direct Scryfall fetch -> if fails (network/CORS), automatically retry via CORS proxy (AllOrigins).
+  Features: search, preview (image load on demand), add/remove, 4-of limit, save to localStorage, import/export.
+*/
+
+// ---------- Config ----------
+const LOCAL_KEY = 'gh_mtg_deck_v1';
+const SRY_BASE = 'https://api.scryfall.com/cards/search?q=';
+const CORS_PROXY = 'https://api.allorigins.win/raw?url='; // fallback proxy
+const MAX_RESULTS = 60;
+
+// ---------- Deck storage ----------
+let deckMap = {}; // id -> { card:{id,name,type_line,image_uris}, count }
+let deckOrder = []; // order of ids
+
+function loadDeck() {
+  const raw = localStorage.getItem(LOCAL_KEY);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.deck)) {
+      deckMap = {}; deckOrder = [];
+      parsed.deck.forEach(it => {
+        const id = it.id || ('local:' + it.name);
+        deckMap[id] = { card: { id: id, name: it.name, type_line: it.type_line || '', image_uris: it.image_uris || null }, count: it.count || 1 };
+        deckOrder.push(id);
+      });
+    }
+  } catch(e) { console.warn('loadDeck parse error', e); }
+}
+
+function saveDeck() {
+  const arr = deckOrder.map(id => {
+    const e = deckMap[id];
+    return { id: e.card.id, name: e.card.name, count: e.count, type_line: e.card.type_line || '', image_uris: e.card.image_uris || null };
+  });
+  localStorage.setItem(LOCAL_KEY, JSON.stringify({ deck: arr }));
+  renderDeck();
+}
+
+function clearDeck() {
+  if (!confirm('Clear deck from browser storage?')) return;
+  localStorage.removeItem(LOCAL_KEY);
+  deckMap = {}; deckOrder = [];
+  renderDeck();
+}
+
+// ---------- Render deck ----------
+function renderDeck() {
+  const area = document.getElementById('deckArea');
+  area.innerHTML = '';
+  let total = 0;
+  deckOrder.forEach(id => {
+    const e = deckMap[id];
+    if (!e) return;
+    total += e.count;
+    const row = document.createElement('div');
+    row.className = 'deck-row';
+    const left = document.createElement('div');
+    left.innerHTML = `<div><strong>${escapeHtml(e.card.name)}</strong></div><div class="muted">${escapeHtml(e.card.type_line||'')}</div>`;
+    const right = document.createElement('div');
+    right.style.display='flex'; right.style.gap='6px'; right.style.alignItems='center';
+    const count = document.createElement('div'); count.className='count'; count.textContent = e.count;
+    const plus = document.createElement('button'); plus.textContent = '+'; plus.onclick = ()=> addToDeck(e.card);
+    const minus = document.createElement('button'); minus.textContent = '−'; minus.style.background='#c0392b'; minus.onclick = ()=> removeOne(id);
+    const rem = document.createElement('button'); rem.textContent = 'Remove'; rem.style.background='#7f8c8d'; rem.onclick = ()=> removeAll(id);
+    right.appendChild(count); right.appendChild(plus); right.appendChild(minus); right.appendChild(rem);
+    row.appendChild(left); row.appendChild(right);
+    area.appendChild(row);
+  });
+  document.getElementById('deckCount').textContent = total + ' cards';
+  updateJsonArea();
+}
+
+function addToDeck(card) {
+  const enforce4 = document.getElementById('fourLimit').checked;
+  const id = card.id || ('local:' + card.name);
+  if (!deckMap[id]) {
+    deckMap[id] = { card: { id:id, name:card.name, type_line: card.type_line||'', image_uris: card.image_uris||null }, count: 0 };
+    deckOrder.push(id);
+  }
+  const cur = deckMap[id].count || 0;
+  if (enforce4 && cur >= 4) { alert('4-of limit reached for this card.'); return; }
+  deckMap[id].count = cur + 1;
+  saveDeck();
+}
+
+function removeOne(id) {
+  if (!deckMap[id]) return;
+  deckMap[id].count -= 1;
+  if (deckMap[id].count <= 0) { delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); }
+  saveDeck();
+}
+
+function removeAll(id) {
+  if (!deckMap[id]) return;
+  delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id);
+  saveDeck();
+}
+
+// ---------- Utilities ----------
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+function updateJsonArea() {
+  const arr = deckOrder.map(id=> {
+    const e = deckMap[id];
+    return { id: e.card.id, name: e.card.name, count: e.count, type_line: e.card.type_line||'', image_uris: e.card.image_uris||null };
+  });
+  document.getElementById('jsonArea').value = JSON.stringify({ deck: arr }, null, 2);
+}
+
+// ---------- Scryfall fetching with fallback ----------
+async function fetchJsonWithFallback(url) {
+  // Try direct fetch first
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Direct fetch failed: ' + r.status);
+    return await r.json();
+  } catch (err) {
+    console.warn('Direct fetch failed, trying CORS proxy:', err);
+    // Use AllOrigins as fallback
+    const proxied = CORS_PROXY + encodeURIComponent(url);
+    const r2 = await fetch(proxied);
+    if (!r2.ok) throw new Error('Proxy fetch failed: ' + r2.status);
+    return await r2.json();
+  }
+}
+
+async function scrySearch(q, page=1) {
+  // build Scryfall query - encode, include unique prints:true to show many prints but that's fine
+  const encoded = encodeURIComponent(q) + `&page=${page}`;
+  const url = SRY_BASE + encoded;
+  return await fetchJsonWithFallback(url);
+}
+
+async function scryCardById(id) {
+  const url = 'https://api.scryfall.com/cards/' + encodeURIComponent(id);
+  return await fetchJsonWithFallback(url);
+}
+
+// ---------- Search UI ----------
+const resultsDiv = document.getElementById('results');
+const searchInfo = document.getElementById('searchInfo');
+
+async function doSearch(q, page=1) {
+  if (!q || q.trim().length < 1) {
+    resultsDiv.innerHTML = '<div class="muted">Type a name or keyword then click Search.</div>';
+    searchInfo.textContent = '';
+    return;
+  }
+  resultsDiv.innerHTML = '<div class="muted">Searching…</div>';
+  searchInfo.textContent = '';
+  try {
+    const data = await scrySearch(q, page);
+    if (data.object === 'error') {
+      resultsDiv.innerHTML = `<div class="muted">Scryfall error: ${escapeHtml(data.details || 'unknown')}</div>`;
+      return;
+    }
+    const entries = data.data || [];
+    if (!entries.length) { resultsDiv.innerHTML = '<div class="muted">No results</div>'; return; }
+    resultsDiv.innerHTML = '';
+    const limit = Math.min(entries.length, MAX_RESULTS);
+    for (let i=0;i<limit;i++){
+      const c = entries[i];
+      const row = document.createElement('div'); row.className='result';
+      const thumb = document.createElement('div'); thumb.className='thumb'; thumb.textContent = c.set ? c.set.toUpperCase() : '';
+      const meta = document.createElement('div'); meta.className='meta';
+      meta.innerHTML = `<strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.type_line||'')} • ${escapeHtml(c.rarity||'')}</small>`;
+      const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='6px';
+      const previewBtn = document.createElement('button'); previewBtn.textContent='Preview'; previewBtn.onclick = ()=> loadAndPreview(c.id);
+      const addBtn = document.createElement('button'); addBtn.textContent='Add'; addBtn.onclick = async ()=> {
+        const full = await scryCardById(c.id);
+        addToDeck(full);
+      };
+      actions.appendChild(previewBtn); actions.appendChild(addBtn);
+      row.appendChild(thumb); row.appendChild(meta); row.appendChild(actions);
+      resultsDiv.appendChild(row);
+    }
+    // paging controls
+    const nav = document.createElement('div'); nav.style.display='flex'; nav.style.justifyContent='space-between'; nav.style.marginTop='8px';
+    const prev = document.createElement('button'); prev.textContent='Prev'; prev.disabled = (page <= 1);
+    const next = document.createElement('button'); next.textContent='Next'; next.disabled = !data.has_more;
+    prev.onclick = ()=> doSearch(q, page-1);
+    next.onclick = ()=> doSearch(q, page+1);
+    nav.appendChild(prev); nav.appendChild(next);
+    resultsDiv.appendChild(nav);
+
+    searchInfo.textContent = `${data.total_cards || entries.length} results`;
+  } catch (e) {
+    resultsDiv.innerHTML = `<div class="muted">Search failed: ${escapeHtml(e.message)}</div>`;
+    console.error(e);
+  }
+}
+
+async function loadAndPreview(id) {
+  try {
+    const card = await scryCardById(id);
+    let img = '';
+    if (card.image_uris && card.image_uris.normal) img = card.image_uris.normal;
+    else if (card.image_uris && card.image_uris.large) img = card.image_uris.large;
+    else if (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris) img = card.card_faces[0].image_uris.normal;
+    document.getElementById('previewTitle').textContent = card.name;
+    document.getElementById('previewType').textContent = card.type_line || '';
+    const imgEl = document.getElementById('previewImg');
+    const placeholder = document.getElementById('previewPlaceholder');
+    if (img) { imgEl.src = img; imgEl.style.display='block'; placeholder.style.display='none'; } 
+    else { imgEl.style.display='none'; placeholder.style.display='block'; placeholder.textContent='No image available'; }
+    // preload card into deckMap (but not counted until Add)
+    const idk = card.id || ('local:' + card.name);
+    if (!deckMap[idk]) {
+      deckMap[idk] = { card: { id: idk, name: card.name, type_line: card.type_line || '', image_uris: card.image_uris || null }, count: 0 };
+    } else {
+      deckMap[idk].card.image_uris = deckMap[idk].card.image_uris || card.image_uris || null;
+      deckMap[idk].card.type_line = deckMap[idk].card.type_line || card.type_line || '';
+    }
+  } catch(e) {
+    alert('Preview failed: ' + e.message);
+    console.error(e);
+  }
+}
+
+// ---------- Import / Export ----------
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const arr = deckOrder.map(id=>{ const e = deckMap[id]; return { id:e.card.id, name:e.card.name, count:e.count, type_line:e.card.type_line || '' }; });
+  const blob = new Blob([JSON.stringify({deck:arr}, null,2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'deck.json'; a.click(); URL.revokeObjectURL(a.href);
+});
+
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  const raw = prompt('Paste deck JSON ({"deck":[...]})');
+  if (!raw) return;
+  try {
+    const obj = JSON.parse(raw);
+    if (!Array.isArray(obj.deck)) throw new Error('Invalid deck JSON');
+    deckMap = {}; deckOrder = [];
+    obj.deck.forEach(it=>{
+      const id = it.id || ('local:' + it.name);
+      deckMap[id] = { card: { id:id, name:it.name, type_line:it.type_line || '', image_uris: it.image_uris || null }, count: it.count || 1 };
+      deckOrder.push(id);
+    });
+    saveDeck();
+    alert('Imported deck applied.');
+  } catch(e) { alert('Import error: ' + e.message); }
+});
+
+document.getElementById('applyImport').addEventListener('click', ()=>{
+  try {
+    const parsed = JSON.parse(document.getElementById('jsonArea').value);
+    if (!Array.isArray(parsed.deck)) throw new Error('JSON must include { deck: [...] }');
+    deckMap = {}; deckOrder = [];
+    parsed.deck.forEach(it=>{
+      const id = it.id || ('local:' + it.name);
+      deckMap[id] = { card: { id:id, name:it.name, type_line: it.type_line || '', image_uris: it.image_uris || null }, count: it.count || 1 };
+      deckOrder.push(id);
+    });
+    saveDeck();
+    alert('Deck applied from text area.');
+  } catch(e) { alert('Apply import error: ' + e.message); }
+});
+
+document.getElementById('copyExport').addEventListener('click', ()=>{
+  document.getElementById('jsonArea').select();
+  document.execCommand('copy');
+  alert('Deck JSON copied to clipboard.');
+});
+
+// quick popular list
+const popular = ['Sol Ring','Lightning Bolt','Swords to Plowshares','Counterspell','Opt','Llanowar Elves','Path to Exile','Brainstorm','Thoughtseize'];
+
+document.getElementById('searchBtn').addEventListener('click', ()=> doSearch(document.getElementById('q').value.trim(),1));
+document.getElementById('q').addEventListener('keydown', (e)=> { if (e.key === 'Enter') doSearch(document.getElementById('q').value.trim(),1); });
+document.getElementById('popularBtn').addEventListener('click', ()=> doSearch(popular.join(' OR '),1));
+document.getElementById('clearBtn')?.addEventListener('click', clearDeck);
+
+// ---------- init ----------
+loadDeck(); renderDeck(); updateJsonArea();
+</script>
+</body>
+</html>
