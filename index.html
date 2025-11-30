@@ -163,22 +163,40 @@
 </div>
 
 <script>
-/* Advanced-filter deck builder
-   Strategy:
-   - Search Scryfall (by name/keyword). If name empty, we search a broad single-letter 'a' to receive results.
-   - Apply client-side filters: supertypes, type, subtype (from type_line), colors (card.colors array), and Scryfall legalities for the chosen format.
-   - Uses fallback CORS proxy if direct fetch fails (same pattern as before).
-*/
-
-// Config
+// --- CONFIG & STORAGE ---
 const LOCAL_KEY = 'gh_mtg_deck_v2';
 const SRY_BASE = 'https://api.scryfall.com/cards/search?q=';
 const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 const MAX_RESULTS = 60;
+const PLACEHOLDER_IMG = 'https://via.placeholder.com/223x310?text=No+Image';
 
-// Deck storage
-let deckMap = {}; let deckOrder = [];
+let deckMap = {}, deckOrder = [];
+let lastPage = 1;
 
+// --- NORMALIZE CARD (No nulls) ---
+function normalizeCard(card){
+  const id = card.id || ('local:' + card.name || 'Unknown');
+  const name = card.name || 'Unknown';
+  const type_line = card.type_line || '';
+  let image_uris = card.image_uris || {};
+  if (!image_uris.normal) image_uris.normal = PLACEHOLDER_IMG;
+  if (!image_uris.large) image_uris.large = image_uris.normal;
+
+  // Double-faced cards
+  if (card.card_faces && Array.isArray(card.card_faces)){
+    card.card_faces.forEach(face=>{
+      if (!face.image_uris) face.image_uris = { normal: PLACEHOLDER_IMG, large: PLACEHOLDER_IMG };
+      else {
+        if (!face.image_uris.normal) face.image_uris.normal = PLACEHOLDER_IMG;
+        if (!face.image_uris.large) face.image_uris.large = face.image_uris.normal;
+      }
+    });
+  }
+
+  return { id, name, type_line, image_uris };
+}
+
+// --- LOAD / SAVE ---
 function loadDeck(){
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
@@ -186,43 +204,40 @@ function loadDeck(){
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed.deck)){
       deckMap = {}; deckOrder = [];
-      parsed.deck.forEach(it => {
-        const id = it.id || ('local:' + it.name);
-        deckMap[id] = { card:{ id:id, name:it.name, type_line: it.type_line||'', image_uris: it.image_uris||null }, count: it.count||1 };
-        deckOrder.push(id);
+      parsed.deck.forEach(it=>{
+        const c = normalizeCard(it);
+        deckMap[c.id] = { card: c, count: it.count || 1 };
+        deckOrder.push(c.id);
       });
     }
   } catch(e){ console.warn(e); }
 }
 
 function saveDeck(){
-  const arr = deckOrder.map(id => {
+  const arr = deckOrder.map(id=>{
     const e = deckMap[id];
-    return { id:e.card.id, name:e.card.name, count:e.count, type_line:e.card.type_line||'', image_uris:e.card.image_uris||null };
+    const c = normalizeCard(e.card);
+    return { id:c.id, name:c.name, count:e.count, type_line:c.type_line, image_uris:c.image_uris };
   });
   localStorage.setItem(LOCAL_KEY, JSON.stringify({deck:arr}));
   renderDeck();
 }
 
-function clearDeck(){
-  if (!confirm('Clear deck from browser storage?')) return;
-  localStorage.removeItem(LOCAL_KEY); deckMap = {}; deckOrder = []; renderDeck();
-}
-
-// Render deck
+// --- DECK RENDER ---
 function renderDeck(){
-  const area = document.getElementById('deckArea'); area.innerHTML = '';
-  let total = 0;
+  const area = document.getElementById('deckArea'); area.innerHTML='';
+  let total=0;
   deckOrder.forEach(id=>{
     const e = deckMap[id]; if(!e) return;
     total += e.count;
-    const row = document.createElement('div'); row.className = 'deck-row';
-    const left = document.createElement('div'); left.innerHTML = `<div><strong>${escapeHtml(e.card.name)}</strong></div><div class="muted">${escapeHtml(e.card.type_line||'')}</div>`;
+    const row = document.createElement('div'); row.className='deck-row';
+    const left = document.createElement('div');
+    left.innerHTML=`<div><strong>${escapeHtml(e.card.name)}</strong></div><div class="muted">${escapeHtml(e.card.type_line)}</div>`;
     const right = document.createElement('div'); right.style.display='flex'; right.style.gap='6px'; right.style.alignItems='center';
-    const count = document.createElement('div'); count.className='count'; count.textContent = e.count;
-    const plus = document.createElement('button'); plus.textContent='+'; plus.onclick = ()=> addToDeck(e.card);
-    const minus = document.createElement('button'); minus.textContent='−'; minus.style.background='#c0392b'; minus.onclick = ()=> removeOne(id);
-    const rem = document.createElement('button'); rem.textContent='Remove'; rem.style.background='#7f8c8d'; rem.onclick = ()=> removeAll(id);
+    const count = document.createElement('div'); count.className='count'; count.textContent=e.count;
+    const plus = document.createElement('button'); plus.textContent='+'; plus.onclick=()=>addToDeck(e.card);
+    const minus = document.createElement('button'); minus.textContent='−'; minus.style.background='#c0392b'; minus.onclick=()=>removeOne(id);
+    const rem = document.createElement('button'); rem.textContent='Remove'; rem.style.background='#7f8c8d'; rem.onclick=()=>removeAll(id);
     right.appendChild(count); right.appendChild(plus); right.appendChild(minus); right.appendChild(rem);
     row.appendChild(left); row.appendChild(right); area.appendChild(row);
   });
@@ -230,244 +245,150 @@ function renderDeck(){
   updateJsonArea();
 }
 
+// --- ADD / REMOVE ---
 function addToDeck(card){
   const enforce4 = document.getElementById('fourLimit').checked;
-  const id = card.id || ('local:' + card.name);
-  if (!deckMap[id]) { deckMap[id] = { card: { id:id, name:card.name, type_line: card.type_line||'', image_uris: card.image_uris||null }, count:0 }; deckOrder.push(id); }
+  const c = normalizeCard(card);
+  const id = c.id;
+  if (!deckMap[id]) { deckMap[id]={ card: c, count:0 }; deckOrder.push(id); }
   const cur = deckMap[id].count || 0;
-  if (enforce4 && cur >= 4) { alert('4-of limit reached for this card.'); return; }
-  deckMap[id].count = cur + 1; saveDeck();
+  if (enforce4 && cur >=4) { alert('4-of limit reached'); return; }
+  deckMap[id].count = cur+1; saveDeck();
 }
 
 function removeOne(id){
-  if (!deckMap[id]) return;
+  if(!deckMap[id]) return;
   deckMap[id].count -= 1;
-  if (deckMap[id].count <= 0) { delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); }
+  if(deckMap[id].count <= 0){ delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); }
   saveDeck();
 }
 
-function removeAll(id){ if (!deckMap[id]) return; delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); saveDeck(); }
+function removeAll(id){ if(!deckMap[id]) return; delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); saveDeck(); }
 
 function updateJsonArea(){
-  const arr = deckOrder.map(id=> { const e = deckMap[id]; return { id:e.card.id, name:e.card.name, count:e.count, type_line:e.card.type_line||'', image_uris:e.card.image_uris||null }; });
-  document.getElementById('jsonArea').value = JSON.stringify({deck:arr}, null, 2);
+  const arr = deckOrder.map(id=>{
+    const e = deckMap[id];
+    const c = normalizeCard(e.card);
+    return { id:c.id, name:c.name, count:e.count, type_line:c.type_line, image_uris:c.image_uris };
+  });
+  document.getElementById('jsonArea').value = JSON.stringify({deck:arr}, null,2);
 }
 
-// Utils
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// --- ESCAPE ---
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-// Fetch with fallback
+// --- FETCH / SCRYFALL ---
 async function fetchJsonWithFallback(url){
   try {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('Direct fetch failed: ' + r.status);
-    return await r.json();
+    const r = await fetch(url); if(!r.ok) throw new Error('Direct failed: '+r.status); return await r.json();
   } catch(err){
-    console.warn('Direct fetch failed, trying proxy:', err);
-    const prox = CORS_PROXY + encodeURIComponent(url);
-    const r2 = await fetch(prox);
-    if (!r2.ok) throw new Error('Proxy fetch failed: ' + r2.status);
-    return await r2.json();
+    const prox = CORS_PROXY+encodeURIComponent(url);
+    const r2 = await fetch(prox); if(!r2.ok) throw new Error('Proxy failed: '+r2.status); return await r2.json();
   }
 }
 
-// Scryfall calls
-async function scrySearch(q, page=1){
-  const encoded = encodeURIComponent(q) + `&page=${page}`;
-  const url = SRY_BASE + encoded;
-  return await fetchJsonWithFallback(url);
-}
-async function scryCardById(id){ const url = 'https://api.scryfall.com/cards/' + encodeURIComponent(id); return await fetchJsonWithFallback(url); }
+async function scrySearch(q,page=1){ return await fetchJsonWithFallback(SRY_BASE+encodeURIComponent(q)+`&page=${page}`); }
+async function scryCardById(id){ return await fetchJsonWithFallback('https://api.scryfall.com/cards/'+encodeURIComponent(id)); }
 
-// Filtering helper: returns true if card matches selected filters
-function cardMatchesFilters(card, filters){
-  // supertype (Legendary, Basic, Snow) -> check presence in type_line
-  if (filters.supertypes.length){
-    const typeLine = (card.type_line || '').toLowerCase();
-    const hasAll = filters.supertypes.every(s => typeLine.includes(s.toLowerCase()));
-    if (!hasAll) return false;
-  }
-  // type (Creature etc)
-  if (filters.type){
-    if (!((card.type_line||'').toLowerCase().includes(filters.type.toLowerCase()))) return false;
-  }
-  // subtype: split type_line at '—' and check right side contains substring
-  if (filters.subtype){
-    const tl = card.type_line || '';
-    const parts = tl.split('—');
-    const subs = (parts[1] || '').toLowerCase();
-    if (!subs.includes(filters.subtype.toLowerCase())) return false;
-  }
-  // colors: require card.colors include all selected
-  if (filters.colors.length){
-    const c = card.colors || []; // array of letters like ['R','G']
-    // if card has no colors and user selected colors -> fail
-    const allPresent = filters.colors.every(ch => c.includes(ch));
-    if (!allPresent) return false;
-  }
-  // format: use card.legalities[format] === 'legal'
-  if (filters.format){
-    const leg = card.legalities && card.legalities[filters.format];
-    if (leg !== 'legal') return false;
-  }
-  return true;
-}
-
-// Build filters object from UI
+// --- FILTERS ---
 function gatherFilters(){
   const sups = Array.from(document.querySelectorAll('.suptype:checked')).map(i=>i.value);
   const type = document.getElementById('typeSelect').value || '';
   const subtype = document.getElementById('subtypeInput').value.trim();
   const colors = Array.from(document.querySelectorAll('.colorChk:checked')).map(c=>c.value);
   const format = document.getElementById('formatSelect').value || '';
-  return { supertypes: sups, type: type, subtype: subtype, colors: colors, format: format };
+  return { supertypes:sups, type:type, subtype:subtype, colors:colors, format:format };
 }
 
-// Search flow: fetch page, filter client-side, render
+function cardMatchesFilters(card, filters){
+  if(filters.supertypes.length){
+    const typeLine = (card.type_line||'').toLowerCase();
+    if(!filters.supertypes.every(s=>typeLine.includes(s.toLowerCase()))) return false;
+  }
+  if(filters.type && !(card.type_line||'').toLowerCase().includes(filters.type.toLowerCase())) return false;
+  if(filters.subtype){
+    const subs = ((card.type_line||'').split('—')[1]||'').toLowerCase();
+    if(!subs.includes(filters.subtype.toLowerCase())) return false;
+  }
+  if(filters.colors.length){
+    const c = card.colors||[];
+    if(!filters.colors.every(ch=>c.includes(ch))) return false;
+  }
+  if(filters.format){
+    const leg = card.legalities && card.legalities[filters.format];
+    if(leg !== 'legal') return false;
+  }
+  return true;
+}
+
+// --- SEARCH ---
 const resultsDiv = document.getElementById('results');
 const searchInfo = document.getElementById('searchInfo');
 
-async function doSearchRaw(q, page=1){
-  // If q empty, use a broad single-letter 'a' (Scryfall requires something), plus page
-  const query = q && q.trim().length ? q.trim() : 'a';
-  return await scrySearch(query, page);
+async function doSearchRaw(q,page=1){ const query = q&&q.trim()?q.trim():'a'; return await scrySearch(query,page); }
+
+async function doSearch(q,page=1){
+  resultsDiv.innerHTML='<div class="muted">Searching…</div>';
+  searchInfo.textContent='';
+  try{
+    const data = await doSearchRaw(q,page);
+    if(data.object==='error'){ resultsDiv.innerHTML=`<div class="muted">${escapeHtml(data.details)}</div>`; return; }
+    renderResults(data.data);
+    searchInfo.textContent=`Page ${page} / approx ${data.total_cards} results`;
+  } catch(err){ resultsDiv.innerHTML=`<div class="muted">Error: ${err.message}</div>`; }
 }
 
-async function doSearch(q, page=1){
-  resultsDiv.innerHTML = '<div class="muted">Searching…</div>';
-  searchInfo.textContent = '';
-  try {
-    const data = await doSearchRaw(q, page);
-    if (data.object === 'error') { resultsDiv.innerHTML = `<div class="muted">Scryfall error: ${escapeHtml(data.details||'unknown')}</div>`; return; }
-    const rawEntries = data.data || [];
-    // filter them client-side according to UI filters
-    const filters = gatherFilters();
-    const filtered = rawEntries.filter(card => cardMatchesFilters(card, filters));
-    renderResults(filtered, q, page, data.has_more, data.total_cards);
-  } catch(e){
-    resultsDiv.innerHTML = `<div class="muted">Search failed: ${escapeHtml(e.message)}</div>`;
-    console.error(e);
-  }
-}
-
-function renderResults(entries, q, page, has_more, total){
-  resultsDiv.innerHTML = '';
-  if (!entries.length){ resultsDiv.innerHTML = '<div class="muted">No results (try changing filters or search term)</div>'; searchInfo.textContent = ''; return; }
-  const limit = Math.min(entries.length, MAX_RESULTS);
-  for (let i=0;i<limit;i++){
-    const c = entries[i];
-    const row = document.createElement('div'); row.className='result';
-    const thumb = document.createElement('div'); thumb.className='thumb'; thumb.textContent = (c.set||'').toUpperCase();
+function renderResults(cards){
+  resultsDiv.innerHTML='';
+  cards.forEach(card=>{
+    const c = normalizeCard(card);
+    const div = document.createElement('div'); div.className='result';
+    const img = document.createElement('img'); img.src=c.image_uris.normal; img.className='thumb'; img.alt=c.name;
     const meta = document.createElement('div'); meta.className='meta';
-    meta.innerHTML = `<strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.type_line||'')} • ${escapeHtml(c.rarity||'')}</small>`;
-    const actions = document.createElement('div'); actions.style.display='flex'; actions.style.gap='6px';
-    const previewBtn = document.createElement('button'); previewBtn.textContent='Preview'; previewBtn.onclick = ()=> loadAndPreview(c.id);
-    const addBtn = document.createElement('button'); addBtn.textContent='Add'; addBtn.onclick = async ()=>{
-      const full = await scryCardById(c.id);
-      addToDeck(full);
-    };
-    actions.appendChild(previewBtn); actions.appendChild(addBtn);
-    row.appendChild(thumb); row.appendChild(meta); row.appendChild(actions);
-    resultsDiv.appendChild(row);
-  }
-  // paging
-  const nav = document.createElement('div'); nav.style.display='flex'; nav.style.justifyContent='space-between'; nav.style.marginTop='8px';
-  const prev = document.createElement('button'); prev.textContent='Prev'; prev.disabled = false; prev.onclick = ()=> doSearch(document.getElementById('q').value.trim(), Math.max(1, (Number(prev.dataset.page)||1)-1));
-  const next = document.createElement('button'); next.textContent='Next'; next.disabled = !has_more;
-  // we can't compute page easily here without passing, so use local event closure
-  prev.onclick = ()=> doSearch(document.getElementById('q').value.trim(), 1); // simplifies: Prev resets to page 1
-  next.onclick = ()=> {
-    // Scryfall returns has_more and we don't have next page token here; easiest is to increment by 1 based on a stored lastPage
-    lastPage = (lastPage || 1) + 1; doSearch(document.getElementById('q').value.trim(), lastPage);
-  };
-  nav.appendChild(prev); nav.appendChild(next);
-  resultsDiv.appendChild(nav);
-
-  searchInfo.textContent = `${total || entries.length} results (filtered)`;
+    meta.innerHTML=`<strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.type_line)}</small>`;
+    const btn = document.createElement('button'); btn.textContent='Add'; btn.onclick=()=>addToDeck(c);
+    div.appendChild(img); div.appendChild(meta); div.appendChild(btn);
+    div.onclick=()=>showPreview(c);
+    resultsDiv.appendChild(div);
+  });
 }
 
-// Preview
-async function loadAndPreview(id){
-  try {
-    const card = await scryCardById(id);
-    let img = '';
-    if (card.image_uris && card.image_uris.normal) img = card.image_uris.normal;
-    else if (card.image_uris && card.image_uris.large) img = card.image_uris.large;
-    else if (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris) img = card.card_faces[0].image_uris.normal;
-    document.getElementById('previewTitle').textContent = card.name;
-    document.getElementById('previewType').textContent = card.type_line || '';
-    const imgEl = document.getElementById('previewImg'), ph = document.getElementById('previewPlaceholder');
-    if (img){ imgEl.src = img; imgEl.style.display = 'block'; ph.style.display = 'none'; } else { imgEl.style.display='none'; ph.style.display='block'; ph.textContent='No image available'; }
-    // preload into deckMap but not counted until add
-    const idk = card.id || ('local:' + card.name);
-    if (!deckMap[idk]) deckMap[idk] = { card: { id:idk, name:card.name, type_line:card.type_line||'', image_uris:card.image_uris||null }, count:0 };
-    else { deckMap[idk].card.image_uris = deckMap[idk].card.image_uris || card.image_uris || null; deckMap[idk].card.type_line = deckMap[idk].card.type_line || card.type_line || ''; }
-  } catch(e){ alert('Preview failed: ' + e.message); console.error(e); }
+// --- PREVIEW ---
+function showPreview(card){
+  const img = document.getElementById('previewImg');
+  const ph = document.getElementById('previewPlaceholder');
+  img.src = card.image_uris.normal; img.style.display='block'; ph.style.display='none';
+  document.getElementById('previewTitle').textContent = card.name;
+  document.getElementById('previewType').textContent = card.type_line;
 }
 
-// Import/Export
-document.getElementById('exportBtn').addEventListener('click', ()=>{
-  const arr = deckOrder.map(id=>{ const e = deckMap[id]; return { id:e.card.id, name:e.card.name, count:e.count, type_line:e.card.type_line||'' }; });
-  const blob = new Blob([JSON.stringify({deck:arr}, null,2)], {type:'application/json'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'deck.json'; a.click(); URL.revokeObjectURL(a.href);
-});
-document.getElementById('importBtn').addEventListener('click', ()=>{
-  const raw = prompt('Paste deck JSON ({"deck":[...]})');
-  if (!raw) return;
-  try {
-    const obj = JSON.parse(raw);
-    if (!Array.isArray(obj.deck)) throw new Error('Invalid deck JSON');
-    deckMap = {}; deckOrder = [];
-    obj.deck.forEach(it=>{
-      const id = it.id || ('local:' + it.name);
-      deckMap[id] = { card: { id:id, name:it.name, type_line: it.type_line || '', image_uris: it.image_uris || null }, count: it.count || 1 };
-      deckOrder.push(id);
-    });
-    saveDeck(); alert('Imported deck applied.');
-  } catch(e){ alert('Import error: ' + e.message); }
-});
-document.getElementById('applyImport').addEventListener('click', ()=>{
-  try {
+// --- EVENT LISTENERS ---
+document.getElementById('searchBtn').onclick=()=>doSearch(document.getElementById('q').value);
+document.getElementById('q').onkeydown=(e)=>{ if(e.key==='Enter') doSearch(e.target.value); };
+document.getElementById('toggleFilters').onclick=()=>{ const f=document.getElementById('filterPanel'); f.style.display=f.style.display==='none'?'block':'none'; };
+document.getElementById('applyFilters').onclick=()=>{
+  const f = gatherFilters();
+  const cards = Array.from(resultsDiv.querySelectorAll('.result')).map(d=>d.card).filter(c=>cardMatchesFilters(c,f));
+  renderResults(cards);
+};
+document.getElementById('clearFilters').onclick=()=>{ document.querySelectorAll('.filters input').forEach(i=>i.checked=false); document.querySelectorAll('.filters select, .filters input[type=text]').forEach(i=>i.value=''); };
+document.getElementById('exportBtn').onclick=()=>updateJsonArea();
+document.getElementById('applyImport').onclick=()=>{
+  try{
     const parsed = JSON.parse(document.getElementById('jsonArea').value);
-    if (!Array.isArray(parsed.deck)) throw new Error('JSON must include { deck: [...] }');
-    deckMap = {}; deckOrder = [];
-    parsed.deck.forEach(it=>{ const id = it.id || ('local:' + it.name); deckMap[id] = { card: { id:id, name:it.name, type_line:it.type_line||'', image_uris: it.image_uris||null }, count: it.count || 1 }; deckOrder.push(id); });
-    saveDeck(); alert('Deck applied from text area.');
-  } catch(e){ alert('Apply import error: ' + e.message); }
-});
-document.getElementById('copyExport').addEventListener('click', ()=>{ document.getElementById('jsonArea').select(); document.execCommand('copy'); alert('Deck JSON copied to clipboard.'); });
+    if(!parsed.deck||!Array.isArray(parsed.deck)) throw new Error('Invalid deck JSON');
+    deckMap={}; deckOrder=[];
+    parsed.deck.forEach(it=>{ const c=normalizeCard(it); deckMap[c.id]={card:c,count:it.count||1}; deckOrder.push(c.id); });
+    saveDeck();
+  } catch(e){ alert('Error parsing JSON: '+e.message); }
+};
+document.getElementById('copyExport').onclick=()=>{ document.getElementById('jsonArea').select(); document.execCommand('copy'); alert('Copied JSON'); };
 
-// Filters UI
-let filtersVisible = false;
-document.getElementById('toggleFilters').addEventListener('click', ()=>{
-  filtersVisible = !filtersVisible;
-  document.getElementById('filterPanel').style.display = filtersVisible ? 'block' : 'none';
-  document.getElementById('toggleFilters').textContent = filtersVisible ? 'Hide Advanced Filters' : 'Show Advanced Filters';
-});
-
-// Apply / clear filters events
-document.getElementById('applyFilters').addEventListener('click', ()=> { lastPage = 1; doSearch(document.getElementById('q').value.trim(), 1); });
-document.getElementById('clearFilters').addEventListener('click', ()=>{
-  document.querySelectorAll('.suptype').forEach(i=>i.checked=false);
-  document.getElementById('typeSelect').value = '';
-  document.getElementById('subtypeInput').value = '';
-  document.querySelectorAll('.colorChk').forEach(i=>i.checked=false);
-  document.getElementById('formatSelect').value = '';
-});
-
-// Search triggers
-document.getElementById('searchBtn').addEventListener('click', ()=> { lastPage = 1; doSearch(document.getElementById('q').value.trim(), 1); });
-document.getElementById('q').addEventListener('keydown', (e)=> { if (e.key === 'Enter') { lastPage = 1; doSearch(document.getElementById('q').value.trim(), 1); } });
-
-// Simple paging state
-let lastPage = 1;
-
-// Init
-loadDeck(); renderDeck(); updateJsonArea();
+// --- INIT ---
+loadDeck(); renderDeck();
 </script>
 </body>
 </html>
 
-</script>
 </body>
 </html>
