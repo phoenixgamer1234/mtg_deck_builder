@@ -1,204 +1,221 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MTG Deck Builder</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MTG Dual Deck Builder</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 14px; background: #f6f7f8; color: #111; }
-  h1 { font-size: 22px; margin-bottom: 10px; }
-  .layout { display: flex; gap: 16px; align-items: flex-start; }
-  .col { background: #fff; border: 1px solid #e2e4e6; padding: 12px; border-radius: 10px; }
-  .left { flex: 1; min-width: 360px; }
-  .right { width: 400px; }
-  #results { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
-  .result { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; border: 1px solid #eee; background: #fff; }
-  .thumb { width: 48px; height: 70px; background: #f2f3f4; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #999; }
-  .meta { flex: 1; }
-  .meta small { display: block; color: #666; margin-top: 4px; }
-  .deck-list, #importExportArea { max-height: 30vh; overflow-y: auto; margin-top: 6px; padding: 4px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa; }
-  .deck-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px; border-bottom: 1px dashed #eee; }
-  .count { background: #eee; padding: 4px 6px; border-radius: 4px; font-weight: 700; }
-  #preview { margin-top: 12px; text-align: center; }
-  #preview img { max-width: 100%; border-radius: 6px; display: block; margin: 6px auto; }
-  button { cursor: pointer; padding: 4px 8px; border-radius: 6px; border: none; background: #287271; color: white; }
-  button.alt { background: #444; }
-  select, input[type=text], input[type=search] { padding: 6px; border-radius: 6px; border: 1px solid #ccc; }
-  .muted { color: #666; font-size: 13px; }
+  :root{--accent:#287271;--muted:#666}
+  body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:14px;background:#f6f7f8;color:#111}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  h1{font-size:20px;margin:0}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  input[type="search"]{padding:8px 10px;border:1px solid #ccc;border-radius:8px;width:320px}
+  button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button.alt{background:#444}
+  .layout{display:flex;gap:16px;align-items:flex-start}
+  .col{background:#fff;border:1px solid #e2e4e6;padding:12px;border-radius:10px}
+  .left{flex:1;min-width:360px}
+  .right{width:380px}
+  #results{max-height:64vh;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-top:6px}
+  .result{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;border:1px solid #eee;background:#fff}
+  .thumb{width:48px;height:70px;background:#f2f3f4;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999}
+  .meta{flex:1}
+  .meta small{display:block;color:var(--muted);margin-top:4px}
+  .deck-list{max-height:44vh;overflow:auto;margin-top:6px}
+  .deck-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border-radius:6px;border-bottom:1px dashed #eee}
+  .count{background:#eee;padding:6px 8px;border-radius:6px;font-weight:700}
+  .preview{margin-top:12px;text-align:center}
+  img#previewImg{max-width:100%;border-radius:8px;display:block;margin:0 auto}
+  .muted{color:var(--muted);font-size:13px}
+  textarea{width:100%;height:120px;border:1px solid #ddd;border-radius:8px;padding:8px}
+  .row{display:flex;gap:8px;align-items:center}
+  .filters{margin-top:10px;border-top:1px solid #eee;padding-top:10px}
+  .filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  select, input[type="text"]{padding:6px;border-radius:6px;border:1px solid #ccc}
+  label.checkbox{display:flex;gap:6px;align-items:center}
+  .small{font-size:13px;color:#444}
 </style>
 </head>
 <body>
+<header>
+  <div>
+    <h1>MTG Dual Deck Builder</h1>
+    <div class="muted">Two decks: Standard & Commander. Switch format to edit each deck independently.</div>
+  </div>
+</header>
 
-<h1>MTG Deck Builder — Standard / Commander</h1>
+<div class="controls">
+  <input id="q" type="search" placeholder="Name / keyword (press Enter or Search)" />
+  <button id="searchBtn">Search</button>
+  <label class="row" style="align-items:center;gap:6px;">
+    Format:
+    <select id="formatSelect">
+      <option value="standard">Standard</option>
+      <option value="commander">Commander</option>
+    </select>
+  </label>
+</div>
 
 <div class="layout">
   <main class="col left">
-    <div class="controls">
-      <input type="search" id="searchInput" placeholder="Card name / keyword">
-      <button id="searchBtn">Search</button>
-      <select id="formatSelect">
-        <option value="standard">Standard</option>
-        <option value="commander">Commander</option>
-      </select>
-      <button id="toggleFilters" class="alt">Show Filters</button>
-    </div>
-
-    <div id="filterPanel" style="display:none; margin-top: 8px;">
-      <label>Type:
-        <input type="text" id="typeFilter" placeholder="e.g., Creature">
-      </label>
-      <label>Supertype:
-        <input type="text" id="supertypeFilter" placeholder="e.g., Legendary">
-      </label>
-      <label>Subtype:
-        <input type="text" id="subtypeFilter" placeholder="e.g., Elf">
-      </label>
-      <label>Colors (comma separated, e.g., W,U):
-        <input type="text" id="colorFilter" placeholder="W,U,R,B,G">
-      </label>
-    </div>
-
-    <div id="results"><div class="muted">Search to see results</div></div>
-
-    <div id="preview">
-      <strong id="previewName">Preview</strong>
-      <div id="previewType" class="muted"></div>
-      <img id="previewImg" src="" alt="">
-    </div>
+    <strong>Search results</strong>
+    <div id="results" aria-live="polite" style="margin-top:12px"><div class="muted">Search to see results.</div></div>
   </main>
 
   <aside class="col right">
-    <strong>Your Deck</strong>
-    <div class="muted" style="margin-bottom: 4px;">Deck list with counts</div>
-    <div id="deckList" class="deck-list"></div>
+    <!-- Standard Deck -->
+    <div id="standardDeckAreaContainer">
+      <strong>Standard Deck</strong>
+      <div class="muted">Saved in browser</div>
+      <div id="standardDeckCount" style="margin-top:8px;font-weight:700">0 cards</div>
+      <div id="standardDeckArea" class="deck-list" aria-live="polite"></div>
+      <div class="preview col" id="standardPreview">
+        <strong id="standardPreviewTitle">Preview</strong>
+        <div id="standardPreviewType" class="muted" style="margin-bottom:8px"></div>
+        <img id="standardPreviewImg" alt="card preview" style="display:none;max-width:100%;border-radius:6px" />
+        <div id="standardPreviewPlaceholder" class="muted">No card selected</div>
+      </div>
+      <div class="col" style="margin-top:10px">
+        <strong>Deck List</strong>
+        <div class="muted">Text list for import/export</div>
+        <textarea id="standardList" placeholder="Deck list will appear here"></textarea>
+      </div>
+    </div>
 
-    <strong style="margin-top:12px; display:block;">Import / Export List</strong>
-    <div class="muted" style="margin-bottom: 4px;">Plain list (Untap-style)</div>
-    <textarea id="importExportArea" style="width:100%; height:150px;"></textarea>
+    <!-- Commander Deck -->
+    <div id="commanderDeckAreaContainer" style="display:none">
+      <strong>Commander Deck</strong>
+      <div class="muted">Saved in browser</div>
+      <div id="commanderDeckCount" style="margin-top:8px;font-weight:700">0 cards</div>
+      <div id="commanderDeckArea" class="deck-list" aria-live="polite"></div>
+      <div class="preview col" id="commanderPreview">
+        <strong id="commanderPreviewTitle">Preview</strong>
+        <div id="commanderPreviewType" class="muted" style="margin-bottom:8px"></div>
+        <img id="commanderPreviewImg" alt="card preview" style="display:none;max-width:100%;border-radius:6px" />
+        <div id="commanderPreviewPlaceholder" class="muted">No card selected</div>
+      </div>
+      <div class="col" style="margin-top:10px">
+        <strong>Deck List</strong>
+        <div class="muted">Text list for import/export</div>
+        <textarea id="commanderList" placeholder="Deck list will appear here"></textarea>
+      </div>
+    </div>
   </aside>
 </div>
 
 <script>
-const deckMap = {};
-let deckOrder = [];
+// ---- Deck Data ----
+let standardDeckMap = {}, standardDeckOrder = [];
+let commanderDeckMap = {}, commanderDeckOrder = [];
 
-function updateDeckList() {
-  const deckDiv = document.getElementById('deckList');
-  deckDiv.innerHTML = '';
-  let total = 0;
-  deckOrder.forEach(id=>{
-    const e = deckMap[id];
-    total += e.count;
-    const row = document.createElement('div');
-    row.className = 'deck-row';
-    row.innerHTML = `<span>${e.count} x ${e.card.name} (${e.card.type_line||''})</span>`;
-    const btns = document.createElement('div');
-    const plus = document.createElement('button'); plus.textContent = '+'; plus.onclick = ()=> addToDeck(e.card);
-    const minus = document.createElement('button'); minus.textContent = '−'; minus.onclick = ()=> removeOne(id);
-    btns.appendChild(plus); btns.appendChild(minus);
-    row.appendChild(btns);
-    deckDiv.appendChild(row);
+// Current active deck
+let currentFormat = 'standard';
+
+// ---- Helpers ----
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Get current deck variables
+function getCurrentDeck(){ 
+  if(currentFormat==='standard') return { map:standardDeckMap, order:standardDeckOrder, area:'standardDeckArea', count:'standardDeckCount', list:'standardList', preview:'standardPreview' };
+  return { map:commanderDeckMap, order:commanderDeckOrder, area:'commanderDeckArea', count:'commanderDeckCount', list:'commanderList', preview:'commanderPreview' };
+}
+
+// ---- Render Deck ----
+function renderDeck(){
+  const deck = getCurrentDeck();
+  const area = document.getElementById(deck.area); area.innerHTML='';
+  let total=0;
+  deck.order.forEach(id=>{
+    const e = deck.map[id];
+    if(!e) return;
+    total+=e.count;
+    const row = document.createElement('div'); row.className='deck-row';
+    const left = document.createElement('div'); left.innerHTML=`<div><strong>${escapeHtml(e.card.name)}</strong></div><div class="muted">${escapeHtml(e.card.type_line||'')}</div>`;
+    const right = document.createElement('div'); right.style.display='flex'; right.style.gap='6px'; right.style.alignItems='center';
+    const countDiv = document.createElement('div'); countDiv.className='count'; countDiv.textContent=e.count;
+    const plus = document.createElement('button'); plus.textContent='+'; plus.onclick=()=> addToDeck(e.card);
+    const minus = document.createElement('button'); minus.textContent='−'; minus.style.background='#c0392b'; minus.onclick=()=> removeOne(id);
+    const rem = document.createElement('button'); rem.textContent='Remove'; rem.style.background='#7f8c8d'; rem.onclick=()=> removeAll(id);
+    right.appendChild(countDiv); right.appendChild(plus); right.appendChild(minus); right.appendChild(rem);
+    row.appendChild(left); row.appendChild(right);
+    area.appendChild(row);
   });
-  updateImportExport();
+  document.getElementById(deck.count).textContent=total+' cards';
+  updateDeckList();
 }
 
-function updateImportExport() {
-  const text = deckOrder.map(id=>{
-    const e = deckMap[id];
-    return e.count + ' ' + e.card.name;
-  }).join('\n');
-  document.getElementById('importExportArea').value = text;
-}
-
-function addToDeck(card) {
-  const format = document.getElementById('formatSelect').value;
+// ---- Add/Remove ----
+function addToDeck(card){
+  const deck = getCurrentDeck();
   const id = card.id || ('local:' + card.name);
-  if (!deckMap[id]) { deckMap[id] = { card: card, count: 0 }; deckOrder.push(id); }
-  let cur = deckMap[id].count;
-  // Rules enforcement
-  if (format === 'standard' && cur >= 4) { alert('Standard: max 4 copies'); return; }
-  if (format === 'commander' && cur >= 1 && !isBasicLand(card)) { alert('Commander: only 1 copy per card'); return; }
-  if (format === 'standard' && totalDeckCount() >= 60) { alert('Standard: max 60 cards'); return; }
-  if (format === 'commander' && totalDeckCount() >= 100) { alert('Commander: deck full'); return; }
-  deckMap[id].count++;
-  updateDeckList();
+  if(!deck.map[id]) deck.map[id]={card:{id:id,name:card.name,type_line:card.type_line||'',image_uris:card.image_uris||null},count:0,format:currentFormat};
+  deck.map[id].count+=1;
+  if(!deck.order.includes(id)) deck.order.push(id);
+  renderDeck();
+}
+function removeOne(id){
+  const deck = getCurrentDeck();
+  if(!deck.map[id]) return;
+  deck.map[id].count-=1;
+  if(deck.map[id].count<=0){ delete deck.map[id]; deck.order=deck.order.filter(x=>x!==id); }
+  renderDeck();
+}
+function removeAll(id){
+  const deck = getCurrentDeck();
+  if(!deck.map[id]) return;
+  delete deck.map[id]; deck.order=deck.order.filter(x=>x!==id);
+  renderDeck();
 }
 
-function removeOne(id) {
-  if (!deckMap[id]) return;
-  deckMap[id].count--;
-  if (deckMap[id].count <=0) { delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); }
-  updateDeckList();
-}
-
-function totalDeckCount() {
-  return deckOrder.reduce((sum,id)=>sum + deckMap[id].count,0);
-}
-
-function isBasicLand(card) {
-  return (card.type_line || '').toLowerCase().includes('basic land');
-}
-
-// Search & Filters
-async function searchCards() {
-  const q = document.getElementById('searchInput').value.trim() || 'a';
-  let url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}`;
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    const results = (data.data || []).filter(c=>filterCard(c));
-    renderSearchResults(results);
-  } catch(e){ console.error(e); alert('Search failed'); }
-}
-
-function filterCard(c) {
-  const typeF = document.getElementById('typeFilter').value.trim().toLowerCase();
-  const superF = document.getElementById('supertypeFilter').value.trim().toLowerCase();
-  const subF = document.getElementById('subtypeFilter').value.trim().toLowerCase();
-  const colors = document.getElementById('colorFilter').value.trim().toUpperCase().split(',').filter(Boolean);
-  if (typeF && !(c.type_line||'').toLowerCase().includes(typeF)) return false;
-  if (superF && !(c.type_line||'').toLowerCase().includes(superF)) return false;
-  if (subF && !((c.type_line||'').split('—')[1]||'').toLowerCase().includes(subF)) return false;
-  if (colors.length) {
-    const cardColors = c.colors || [];
-    if (!colors.every(ch=>cardColors.includes(ch))) return false;
-  }
-  return true;
-}
-
-function renderSearchResults(entries) {
-  const div = document.getElementById('results');
-  div.innerHTML = '';
-  if (!entries.length) { div.innerHTML = '<div class="muted">No results</div>'; return; }
-  entries.forEach(c=>{
-    const row = document.createElement('div'); row.className='result';
-    const thumb = document.createElement('div'); thumb.className='thumb'; thumb.textContent = (c.set||'').toUpperCase();
-    const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML = `<strong>${c.name}</strong><small>${c.type_line||''}</small>`;
-    const actions = document.createElement('div');
-    const previewBtn = document.createElement('button'); previewBtn.textContent='Preview'; previewBtn.onclick = ()=> showPreview(c);
-    const addBtn = document.createElement('button'); addBtn.textContent='Add'; addBtn.onclick = ()=> addToDeck(c);
-    actions.appendChild(previewBtn); actions.appendChild(addBtn);
-    row.appendChild(thumb); row.appendChild(meta); row.appendChild(actions);
-    div.appendChild(row);
+// ---- Deck List ----
+function updateDeckList(){
+  const deck = getCurrentDeck();
+  const listArea = document.getElementById(deck.list);
+  const lines = deck.order.map(id=>{
+    const e = deck.map[id];
+    return `${e.count} ${e.card.name}`;
   });
+  listArea.value=lines.join('\n');
 }
 
-function showPreview(c) {
-  document.getElementById('previewName').textContent = c.name;
-  document.getElementById('previewType').textContent = c.type_line || '';
-  let img = c.image_uris?.normal || c.image_uris?.large || (c.card_faces && c.card_faces[0].image_uris?.normal) || '';
-  const imgEl = document.getElementById('previewImg');
-  if(img) { imgEl.src = img; imgEl.style.display='block'; } else { imgEl.style.display='none'; }
+// ---- Preview ----
+function showPreview(card){
+  const deck = getCurrentDeck();
+  const pre = document.getElementById(deck.preview);
+  const title = document.getElementById(deck.preview+'Title');
+  const type = document.getElementById(deck.preview+'Type');
+  const img = document.getElementById(deck.preview+'Img');
+  const ph = document.getElementById(deck.preview+'Placeholder');
+  title.textContent=card.name;
+  type.textContent=card.type_line||'';
+  if(card.image_uris && card.image_uris.normal){ img.src=card.image_uris.normal; img.style.display='block'; ph.style.display='none'; }
+  else{ img.style.display='none'; ph.style.display='block'; ph.textContent='No image available'; }
 }
 
-// Event Listeners
-document.getElementById('searchBtn').addEventListener('click', searchCards);
-document.getElementById('searchInput').addEventListener('keydown', e=>{ if(e.key==='Enter') searchCards(); });
-document.getElementById('toggleFilters').addEventListener('click', ()=>{
-  const f = document.getElementById('filterPanel');
-  f.style.display = f.style.display==='none'?'block':'none';
+// ---- Format Switch ----
+document.getElementById('formatSelect').addEventListener('change',e=>{
+  currentFormat=e.target.value;
+  document.getElementById('standardDeckAreaContainer').style.display=currentFormat==='standard'?'block':'none';
+  document.getElementById('commanderDeckAreaContainer').style.display=currentFormat==='commander'?'block':'none';
+  renderDeck();
 });
-</script>
 
+// ---- Search (stub for Scryfall) ----
+const resultsDiv = document.getElementById('results');
+document.getElementById('searchBtn').addEventListener('click',()=>{ doSearch(document.getElementById('q').value.trim()); });
+document.getElementById('q').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(document.getElementById('q').value.trim()); });
+
+async function doSearch(q){
+  resultsDiv.innerHTML='<div class="muted">Search triggered (needs Scryfall integration)</div>';
+  // Placeholder: here you would integrate Scryfall search API
+  // Example:
+  // const data = await fetchJsonFromScryfall(q);
+  // renderSearchResults(data)
+}
+
+// ---- Initial ----
+renderDeck();
+</script>
 </body>
 </html>
