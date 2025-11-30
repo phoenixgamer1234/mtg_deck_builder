@@ -189,8 +189,7 @@ function addToDeck(card){
   const id=card.id||('local:'+card.name);
   if(!deck.map[id]) deck.map[id]={card:{id:id,name:card.name,type_line:card.type_line||'',image_uris:card.image_uris||null},count:0};
   // Enforce format rules
-  if(currentFormat==='standard' && deck.map[id].count>=4){ alert('Standard: Max 4 copies allowed'); return; }
-  if(currentFormat==='commander' && deck.map[id].count>=1){ alert('Commander: Singleton rule'); return; }
+  if(deck.map[id].count>=deck.maxCount){ alert(`Max copies reached for this card (${deck.maxCount})`); return; }
   deck.map[id].count+=1;
   if(!deck.order.includes(id)) deck.order.push(id);
   renderDeck();
@@ -232,14 +231,71 @@ document.getElementById('formatSelect').addEventListener('change',e=>{
 let filtersVisible=false;
 document.getElementById('toggleFilters').addEventListener('click',()=>{ filtersVisible=!filtersVisible; document.getElementById('filterPanel').style.display=filtersVisible?'block':'none'; document.getElementById('toggleFilters').textContent=filtersVisible?'Hide Advanced Filters':'Show Advanced Filters'; });
 
-// Search (stub)
+// Scryfall API Search
 const resultsDiv=document.getElementById('results');
-document.getElementById('searchBtn').addEventListener('click',()=>{ doSearch(document.getElementById('q').value.trim()); });
-document.getElementById('q').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(document.getElementById('q').value.trim()); });
+async function fetchScryfall(q){
+  const query=q.trim().length?q.trim():'a';
+  const url='https://api.scryfall.com/cards/search?q='+encodeURIComponent(query)+'&unique=cards';
+  const resp=await fetch(url); 
+  const data=await resp.json();
+  return data.data||[];
+}
+
+// Filter
+function cardMatchesFilters(card){
+  const supertype=document.getElementById('supertypeSelect').value.toLowerCase();
+  const type=document.getElementById('typeSelect').value.toLowerCase();
+  const color=document.getElementById('colorSelect').value.toUpperCase();
+  const subtype=document.getElementById('subtypeInput').value.toLowerCase();
+
+  if(supertype && !(card.type_line||'').toLowerCase().includes(supertype)) return false;
+  if(type && !(card.type_line||'').toLowerCase().includes(type)) return false;
+  if(color && !(card.colors||[]).includes(color)) return false;
+  if(subtype){
+    const parts=(card.type_line||'').split('—');
+    if(!parts[1] || !parts[1].toLowerCase().includes(subtype)) return false;
+  }
+  return true;
+}
 
 async function doSearch(q){
-  resultsDiv.innerHTML='<div class="muted">Search triggered (needs Scryfall integration)</div>';
+  resultsDiv.innerHTML='<div class="muted">Searching...</div>';
+  try{
+    const cards=await fetchScryfall(q);
+    const filtered=cards.filter(cardMatchesFilters);
+    renderSearchResults(filtered);
+  }catch(e){ resultsDiv.innerHTML='<div class="muted">Search failed</div>'; console.error(e); }
 }
+
+function renderSearchResults(cards){
+  resultsDiv.innerHTML='';
+  if(!cards.length){ resultsDiv.innerHTML='<div class="muted">No results</div>'; return; }
+  cards.forEach(card=>{
+    const row=document.createElement('div'); row.className='result';
+    const thumb=document.createElement('div'); thumb.className='thumb'; thumb.textContent=(card.set||'').toUpperCase();
+    const meta=document.createElement('div'); meta.className='meta';
+    meta.innerHTML=`<strong>${escapeHtml(card.name)}</strong><small>${escapeHtml(card.type_line||'')} • ${escapeHtml(card.rarity||'')}</small>`;
+    const actions=document.createElement('div'); actions.style.display='flex'; actions.style.gap='6px';
+    const previewBtn=document.createElement('button'); previewBtn.textContent='Preview'; previewBtn.onclick=()=> showPreview(card);
+    const addBtn=document.createElement('button'); addBtn.textContent='Add'; addBtn.onclick=()=> addToDeck(card);
+    actions.appendChild(previewBtn); actions.appendChild(addBtn);
+    row.appendChild(thumb); row.appendChild(meta); row.appendChild(actions);
+    resultsDiv.appendChild(row);
+  });
+}
+
+// Search events
+document.getElementById('searchBtn').addEventListener('click',()=>doSearch(document.getElementById('q').value));
+document.getElementById('q').addEventListener('keydown',e=>{ if(e.key==='Enter') doSearch(document.getElementById('q').value); });
+
+// Apply / Clear Filters
+document.getElementById('applyFilters').addEventListener('click',()=>doSearch(document.getElementById('q').value));
+document.getElementById('clearFilters').addEventListener('click',()=>{
+  document.getElementById('supertypeSelect').value='';
+  document.getElementById('typeSelect').value='';
+  document.getElementById('colorSelect').value='';
+  document.getElementById('subtypeInput').value='';
+});
 
 renderDeck();
 </script>
