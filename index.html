@@ -3,392 +3,121 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>MTG Deck Builder — Advanced Filters</title>
+<title>MTG Deck Builder — Simple List</title>
 <style>
-  :root{--accent:#287271;--muted:#666}
-  body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:14px;background:#f6f7f8;color:#111}
-  header{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  body{font-family:Arial,sans-serif;margin:14px;background:#f6f7f8;color:#111}
+  header{margin-bottom:10px}
   h1{font-size:20px;margin:0}
-  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-  input[type="search"]{padding:8px 10px;border:1px solid #ccc;border-radius:8px;width:320px}
-  button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+  input[type="search"]{padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:280px}
+  button{background:#287271;color:#fff;border:0;padding:6px 10px;border-radius:6px;cursor:pointer}
   button.alt{background:#444}
-  .layout{display:flex;gap:16px;align-items:flex-start}
-  .col{background:#fff;border:1px solid #e2e4e6;padding:12px;border-radius:10px}
-  .left{flex:1;min-width:360px}
-  .right{width:380px}
-  #results{max-height:64vh;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-top:6px}
-  .result{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;border:1px solid #eee;background:#fff}
-  .thumb{width:48px;height:70px;background:#f2f3f4;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999}
+  #results{max-height:50vh;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-top:6px}
+  .result{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;border:1px solid #eee;background:#fff}
   .meta{flex:1}
-  .meta small{display:block;color:var(--muted);margin-top:4px}
-  .deck-list{max-height:44vh;overflow:auto;margin-top:6px}
-  .deck-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border-radius:6px;border-bottom:1px dashed #eee}
-  .count{background:#eee;padding:6px 8px;border-radius:6px;font-weight:700}
-  .preview{margin-top:12px;text-align:center}
-  img#previewImg{max-width:100%;border-radius:8px;display:block;margin:0 auto}
-  .muted{color:var(--muted);font-size:13px}
-  textarea{width:100%;height:120px;border:1px solid #ddd;border-radius:8px;padding:8px}
-  .row{display:flex;gap:8px;align-items:center}
-  .filters{margin-top:10px;border-top:1px solid #eee;padding-top:10px}
-  .filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-  select, input[type="text"]{padding:6px;border-radius:6px;border:1px solid #ccc}
-  label.checkbox{display:flex;gap:6px;align-items:center}
-  .small{font-size:13px;color:#444}
+  .meta small{display:block;color:#666;margin-top:2px;font-size:12px}
+  #deckList{background:#fff;border:1px solid #e2e4e6;padding:8px;border-radius:8px;max-height:40vh;overflow:auto}
+  .deck-row{display:flex;justify-content:space-between;align-items:center;padding:4px 6px;border-bottom:1px dashed #eee}
+  .deck-row:last-child{border-bottom:none}
+  .count{font-weight:700;margin-right:6px}
 </style>
 </head>
 <body>
+
 <header>
-  <div>
-    <h1>MTG Deck Builder — Advanced Filters</h1>
-    <div class="muted">Toggle Advanced Filters to narrow results by type, subtype, supertypes, colors, and format.</div>
-  </div>
+  <h1>MTG Deck Builder — Simple List</h1>
 </header>
 
 <div class="controls">
-  <input id="q" type="search" placeholder="Name / keyword (press Enter or Search)" />
+  <input id="q" type="search" placeholder="Search card name..." />
   <button id="searchBtn">Search</button>
-  <button id="toggleFilters" class="alt">Show Advanced Filters</button>
-  <label style="display:flex;align-items:center;gap:8px;margin-left:8px">
-    <input id="fourLimit" type="checkbox" checked /> Enforce 4-of
-  </label>
-  <div style="margin-left:auto" class="row">
-    <button id="exportBtn">Export JSON</button>
-    <button id="importBtn" class="alt">Import</button>
-  </div>
 </div>
 
-<div class="layout">
-  <main class="col left">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div><strong>Search results</strong> <span id="searchInfo" class="muted" style="margin-left:8px"></span></div>
-      <div class="small muted">Results show first page; use Next/Prev to page.</div>
-    </div>
+<div id="results"><div class="muted">Search to see results</div></div>
 
-    <div id="filterPanel" class="filters" style="display:none">
-      <div class="filter-row">
-        <div style="min-width:220px">
-          <label class="small">Supertype</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
-            <label class="checkbox"><input type="checkbox" value="Legendary" class="suptype" /> Legendary</label>
-            <label class="checkbox"><input type="checkbox" value="Basic" class="suptype" /> Basic</label>
-            <label class="checkbox"><input type="checkbox" value="Snow" class="suptype" /> Snow</label>
-          </div>
-        </div>
-
-        <div style="min-width:180px">
-          <label class="small">Type</label>
-          <select id="typeSelect">
-            <option value="">Any</option>
-            <option>Creature</option><option>Artifact</option><option>Enchantment</option><option>Instant</option>
-            <option>Sorcery</option><option>Land</option><option>Planeswalker</option><option>Tribal</option>
-          </select>
-        </div>
-
-        <div style="min-width:180px">
-          <label class="small">Subtype (text)</label>
-          <input id="subtypeInput" type="text" placeholder="e.g. Elf, Zombie" />
-        </div>
-      </div>
-
-      <div class="filter-row">
-        <div>
-          <label class="small">Mana Colors (requires card include all selected)</label>
-          <div style="display:flex;gap:8px;margin-top:6px">
-            <label class="checkbox"><input type="checkbox" value="W" class="colorChk" /> W</label>
-            <label class="checkbox"><input type="checkbox" value="U" class="colorChk" /> U</label>
-            <label class="checkbox"><input type="checkbox" value="B" class="colorChk" /> B</label>
-            <label class="checkbox"><input type="checkbox" value="R" class="colorChk" /> R</label>
-            <label class="checkbox"><input type="checkbox" value="G" class="colorChk" /> G</label>
-          </div>
-        </div>
-
-        <div style="min-width:220px">
-          <label class="small">Format legality</label>
-          <select id="formatSelect">
-            <option value="">Any</option>
-            <option value="standard">Standard</option>
-            <option value="pioneer">Pioneer</option>
-            <option value="modern">Modern</option>
-            <option value="legacy">Legacy</option>
-            <option value="vintage">Vintage</option>
-            <option value="commander">Commander</option>
-            <option value="pauper">Pauper</option>
-            <option value="historic">Historic</option>
-            <option value="brawl">Brawl</option>
-          </select>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-        <button id="applyFilters" class="alt">Apply Filters (Search)</button>
-        <button id="clearFilters">Clear Filters</button>
-        <div class="muted small" style="margin-left:auto">Filters are applied client-side to Scryfall results.</div>
-      </div>
-    </div>
-
-    <div id="results" aria-live="polite" style="margin-top:12px">
-      <div class="muted">Search to see results.</div>
-    </div>
-
-    <div class="muted" style="margin-top:10px">Tip: If you leave the name field blank and apply filters, the app will search a broad term like "a" to fetch a page of cards and then filter client-side. You can use paging to see more.</div>
-  </main>
-
-  <aside class="col right">
-    <div>
-      <strong>Your Deck</strong>
-      <div class="muted">Saved in your browser</div>
-      <div id="deckCount" style="margin-top:8px;font-weight:700">0 cards</div>
-    </div>
-
-    <div id="deckArea" class="deck-list" aria-live="polite"></div>
-
-    <div class="preview col" style="margin-top:10px">
-      <strong id="previewTitle">Preview</strong>
-      <div id="previewType" class="muted" style="margin-bottom:8px"></div>
-      <img id="previewImg" alt="card preview" style="display:none;max-width:100%;border-radius:6px" />
-      <div id="previewPlaceholder" class="muted">No card selected</div>
-    </div>
-
-    <div style="margin-top:12px" class="col">
-      <strong>Import / Export</strong>
-      <div class="muted">Copy/paste deck JSON or use the buttons.</div>
-      <textarea id="jsonArea" placeholder='{"deck":[{"id":"...","name":"...","count":4}]}'></textarea>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button id="applyImport">Apply Import</button>
-        <button id="copyExport" class="alt">Copy JSON</button>
-      </div>
-    </div>
-  </aside>
-</div>
+<h2>Your Deck</h2>
+<div id="deckList"><div class="muted">No cards yet</div></div>
 
 <script>
-// --- CONFIG & STORAGE ---
-const LOCAL_KEY = 'gh_mtg_deck_v2';
 const SRY_BASE = 'https://api.scryfall.com/cards/search?q=';
 const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-const MAX_RESULTS = 60;
-const PLACEHOLDER_IMG = 'https://via.placeholder.com/223x310?text=No+Image';
+let deck = {}; // key = card id, value = {name, type_line, count, image_uri}
 
-let deckMap = {}, deckOrder = [];
-let lastPage = 1;
-
-// --- NORMALIZE CARD (No nulls) ---
+// Utils
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function normalizeCard(card){
-  const id = card.id || ('local:' + card.name || 'Unknown');
+  const id = card.id || ('local:' + card.name || 'unknown');
   const name = card.name || 'Unknown';
   const type_line = card.type_line || '';
-  let image_uris = card.image_uris || {};
-  if (!image_uris.normal) image_uris.normal = PLACEHOLDER_IMG;
-  if (!image_uris.large) image_uris.large = image_uris.normal;
-
-  // Double-faced cards
-  if (card.card_faces && Array.isArray(card.card_faces)){
-    card.card_faces.forEach(face=>{
-      if (!face.image_uris) face.image_uris = { normal: PLACEHOLDER_IMG, large: PLACEHOLDER_IMG };
-      else {
-        if (!face.image_uris.normal) face.image_uris.normal = PLACEHOLDER_IMG;
-        if (!face.image_uris.large) face.image_uris.large = face.image_uris.normal;
-      }
-    });
-  }
-
-  return { id, name, type_line, image_uris };
+  let image_uri = '';
+  if (card.image_uris && card.image_uris.normal) image_uri = card.image_uris.normal;
+  else if (card.card_faces && card.card_faces[0] && card.card_faces[0].image_uris && card.card_faces[0].image_uris.normal)
+    image_uri = card.card_faces[0].image_uris.normal;
+  return {id,name,type_line,image_uri};
 }
 
-// --- LOAD / SAVE ---
-function loadDeck(){
-  try {
-    const raw = localStorage.getItem(LOCAL_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.deck)){
-      deckMap = {}; deckOrder = [];
-      parsed.deck.forEach(it=>{
-        const c = normalizeCard(it);
-        deckMap[c.id] = { card: c, count: it.count || 1 };
-        deckOrder.push(c.id);
-      });
-    }
-  } catch(e){ console.warn(e); }
-}
-
-function saveDeck(){
-  const arr = deckOrder.map(id=>{
-    const e = deckMap[id];
-    const c = normalizeCard(e.card);
-    return { id:c.id, name:c.name, count:e.count, type_line:c.type_line, image_uris:c.image_uris };
-  });
-  localStorage.setItem(LOCAL_KEY, JSON.stringify({deck:arr}));
-  renderDeck();
-}
-
-// --- DECK RENDER ---
+// Deck rendering
 function renderDeck(){
-  const area = document.getElementById('deckArea'); area.innerHTML='';
-  let total=0;
-  deckOrder.forEach(id=>{
-    const e = deckMap[id]; if(!e) return;
-    total += e.count;
+  const deckDiv = document.getElementById('deckList');
+  deckDiv.innerHTML = '';
+  const keys = Object.keys(deck);
+  if (!keys.length){ deckDiv.innerHTML = '<div class="muted">No cards yet</div>'; return; }
+  keys.forEach(id=>{
+    const c = deck[id];
     const row = document.createElement('div'); row.className='deck-row';
-    const left = document.createElement('div');
-    left.innerHTML=`<div><strong>${escapeHtml(e.card.name)}</strong></div><div class="muted">${escapeHtml(e.card.type_line)}</div>`;
-    const right = document.createElement('div'); right.style.display='flex'; right.style.gap='6px'; right.style.alignItems='center';
-    const count = document.createElement('div'); count.className='count'; count.textContent=e.count;
-    const plus = document.createElement('button'); plus.textContent='+'; plus.onclick=()=>addToDeck(e.card);
-    const minus = document.createElement('button'); minus.textContent='−'; minus.style.background='#c0392b'; minus.onclick=()=>removeOne(id);
-    const rem = document.createElement('button'); rem.textContent='Remove'; rem.style.background='#7f8c8d'; rem.onclick=()=>removeAll(id);
-    right.appendChild(count); right.appendChild(plus); right.appendChild(minus); right.appendChild(rem);
-    row.appendChild(left); row.appendChild(right); area.appendChild(row);
+    const left = document.createElement('div'); left.innerHTML = `<span class="count">${c.count}</span> ${escapeHtml(c.name)} <small>${escapeHtml(c.type_line)}</small>`;
+    const right = document.createElement('div');
+    const plus = document.createElement('button'); plus.textContent='+'; plus.onclick=()=>{c.count++; renderDeck();};
+    const minus = document.createElement('button'); minus.textContent='−'; minus.onclick=()=>{
+      c.count--; if(c.count<=0) delete deck[id]; renderDeck();
+    };
+    right.appendChild(plus); right.appendChild(minus);
+    row.appendChild(left); row.appendChild(right);
+    deckDiv.appendChild(row);
   });
-  document.getElementById('deckCount').textContent = total + ' cards';
-  updateJsonArea();
 }
 
-// --- ADD / REMOVE ---
-function addToDeck(card){
-  const enforce4 = document.getElementById('fourLimit').checked;
-  const c = normalizeCard(card);
-  const id = c.id;
-  if (!deckMap[id]) { deckMap[id]={ card: c, count:0 }; deckOrder.push(id); }
-  const cur = deckMap[id].count || 0;
-  if (enforce4 && cur >=4) { alert('4-of limit reached'); return; }
-  deckMap[id].count = cur+1; saveDeck();
-}
-
-function removeOne(id){
-  if(!deckMap[id]) return;
-  deckMap[id].count -= 1;
-  if(deckMap[id].count <= 0){ delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); }
-  saveDeck();
-}
-
-function removeAll(id){ if(!deckMap[id]) return; delete deckMap[id]; deckOrder = deckOrder.filter(x=>x!==id); saveDeck(); }
-
-function updateJsonArea(){
-  const arr = deckOrder.map(id=>{
-    const e = deckMap[id];
-    const c = normalizeCard(e.card);
-    return { id:c.id, name:c.name, count:e.count, type_line:c.type_line, image_uris:c.image_uris };
-  });
-  document.getElementById('jsonArea').value = JSON.stringify({deck:arr}, null,2);
-}
-
-// --- ESCAPE ---
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-// --- FETCH / SCRYFALL ---
+// Fetch helper
 async function fetchJsonWithFallback(url){
-  try {
-    const r = await fetch(url); if(!r.ok) throw new Error('Direct failed: '+r.status); return await r.json();
-  } catch(err){
-    const prox = CORS_PROXY+encodeURIComponent(url);
-    const r2 = await fetch(prox); if(!r2.ok) throw new Error('Proxy failed: '+r2.status); return await r2.json();
-  }
-}
-
-async function scrySearch(q,page=1){ return await fetchJsonWithFallback(SRY_BASE+encodeURIComponent(q)+`&page=${page}`); }
-async function scryCardById(id){ return await fetchJsonWithFallback('https://api.scryfall.com/cards/'+encodeURIComponent(id)); }
-
-// --- FILTERS ---
-function gatherFilters(){
-  const sups = Array.from(document.querySelectorAll('.suptype:checked')).map(i=>i.value);
-  const type = document.getElementById('typeSelect').value || '';
-  const subtype = document.getElementById('subtypeInput').value.trim();
-  const colors = Array.from(document.querySelectorAll('.colorChk:checked')).map(c=>c.value);
-  const format = document.getElementById('formatSelect').value || '';
-  return { supertypes:sups, type:type, subtype:subtype, colors:colors, format:format };
-}
-
-function cardMatchesFilters(card, filters){
-  if(filters.supertypes.length){
-    const typeLine = (card.type_line||'').toLowerCase();
-    if(!filters.supertypes.every(s=>typeLine.includes(s.toLowerCase()))) return false;
-  }
-  if(filters.type && !(card.type_line||'').toLowerCase().includes(filters.type.toLowerCase())) return false;
-  if(filters.subtype){
-    const subs = ((card.type_line||'').split('—')[1]||'').toLowerCase();
-    if(!subs.includes(filters.subtype.toLowerCase())) return false;
-  }
-  if(filters.colors.length){
-    const c = card.colors||[];
-    if(!filters.colors.every(ch=>c.includes(ch))) return false;
-  }
-  if(filters.format){
-    const leg = card.legalities && card.legalities[filters.format];
-    if(leg !== 'legal') return false;
-  }
-  return true;
-}
-
-// --- SEARCH ---
-const resultsDiv = document.getElementById('results');
-const searchInfo = document.getElementById('searchInfo');
-
-async function doSearchRaw(q,page=1){ const query = q&&q.trim()?q.trim():'a'; return await scrySearch(query,page); }
-
-async function doSearch(q,page=1){
-  resultsDiv.innerHTML='<div class="muted">Searching…</div>';
-  searchInfo.textContent='';
   try{
-    const data = await doSearchRaw(q,page);
-    if(data.object==='error'){ resultsDiv.innerHTML=`<div class="muted">${escapeHtml(data.details)}</div>`; return; }
-    renderResults(data.data);
-    searchInfo.textContent=`Page ${page} / approx ${data.total_cards} results`;
-  } catch(err){ resultsDiv.innerHTML=`<div class="muted">Error: ${err.message}</div>`; }
+    const r = await fetch(url); if(!r.ok) throw new Error('Direct fetch failed');
+    return await r.json();
+  }catch(err){
+    const prox = CORS_PROXY + encodeURIComponent(url);
+    const r2 = await fetch(prox);
+    if(!r2.ok) throw new Error('Proxy fetch failed');
+    return await r2.json();
+  }
 }
 
-function renderResults(cards){
-  resultsDiv.innerHTML='';
-  cards.forEach(card=>{
-    const c = normalizeCard(card);
-    const div = document.createElement('div'); div.className='result';
-    const img = document.createElement('img'); img.src=c.image_uris.normal; img.className='thumb'; img.alt=c.name;
-    const meta = document.createElement('div'); meta.className='meta';
-    meta.innerHTML=`<strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.type_line)}</small>`;
-    const btn = document.createElement('button'); btn.textContent='Add'; btn.onclick=()=>addToDeck(c);
-    div.appendChild(img); div.appendChild(meta); div.appendChild(btn);
-    div.onclick=()=>showPreview(c);
-    resultsDiv.appendChild(div);
-  });
-}
-
-// --- PREVIEW ---
-function showPreview(card){
-  const img = document.getElementById('previewImg');
-  const ph = document.getElementById('previewPlaceholder');
-  img.src = card.image_uris.normal; img.style.display='block'; ph.style.display='none';
-  document.getElementById('previewTitle').textContent = card.name;
-  document.getElementById('previewType').textContent = card.type_line;
-}
-
-// --- EVENT LISTENERS ---
-document.getElementById('searchBtn').onclick=()=>doSearch(document.getElementById('q').value);
-document.getElementById('q').onkeydown=(e)=>{ if(e.key==='Enter') doSearch(e.target.value); };
-document.getElementById('toggleFilters').onclick=()=>{ const f=document.getElementById('filterPanel'); f.style.display=f.style.display==='none'?'block':'none'; };
-document.getElementById('applyFilters').onclick=()=>{
-  const f = gatherFilters();
-  const cards = Array.from(resultsDiv.querySelectorAll('.result')).map(d=>d.card).filter(c=>cardMatchesFilters(c,f));
-  renderResults(cards);
-};
-document.getElementById('clearFilters').onclick=()=>{ document.querySelectorAll('.filters input').forEach(i=>i.checked=false); document.querySelectorAll('.filters select, .filters input[type=text]').forEach(i=>i.value=''); };
-document.getElementById('exportBtn').onclick=()=>updateJsonArea();
-document.getElementById('applyImport').onclick=()=>{
+// Search
+async function doSearch(q){
+  const query = q && q.trim().length ? q.trim() : 'a';
+  const url = SRY_BASE + encodeURIComponent(query);
+  const resultsDiv = document.getElementById('results');
+  resultsDiv.innerHTML = '<div class="muted">Searching...</div>';
   try{
-    const parsed = JSON.parse(document.getElementById('jsonArea').value);
-    if(!parsed.deck||!Array.isArray(parsed.deck)) throw new Error('Invalid deck JSON');
-    deckMap={}; deckOrder=[];
-    parsed.deck.forEach(it=>{ const c=normalizeCard(it); deckMap[c.id]={card:c,count:it.count||1}; deckOrder.push(c.id); });
-    saveDeck();
-  } catch(e){ alert('Error parsing JSON: '+e.message); }
-};
-document.getElementById('copyExport').onclick=()=>{ document.getElementById('jsonArea').select(); document.execCommand('copy'); alert('Copied JSON'); };
+    const data = await fetchJsonWithFallback(url);
+    const entries = data.data || [];
+    if(!entries.length){ resultsDiv.innerHTML='<div class="muted">No results</div>'; return; }
+    resultsDiv.innerHTML='';
+    entries.slice(0,50).forEach(raw=>{
+      const c = normalizeCard(raw);
+      const row = document.createElement('div'); row.className='result';
+      const meta = document.createElement('div'); meta.className='meta'; meta.innerHTML=`<strong>${escapeHtml(c.name)}</strong><small>${escapeHtml(c.type_line)}</small>`;
+      const btn = document.createElement('button'); btn.textContent='Add'; btn.onclick=()=>{ 
+        if(!deck[c.id]) deck[c.id] = {...c,count:1}; else deck[c.id].count++; renderDeck();
+      };
+      row.appendChild(meta); row.appendChild(btn);
+      resultsDiv.appendChild(row);
+    });
+  }catch(e){ resultsDiv.innerHTML='<div class="muted">Search failed</div>'; console.error(e);}
+}
 
-// --- INIT ---
-loadDeck(); renderDeck();
+// Events
+document.getElementById('searchBtn').addEventListener('click',()=>{doSearch(document.getElementById('q').value.trim());});
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter') doSearch(document.getElementById('q').value.trim());});
+
 </script>
-</body>
-</html>
-
 </body>
 </html>
